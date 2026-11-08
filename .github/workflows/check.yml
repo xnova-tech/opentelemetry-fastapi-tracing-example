@@ -49,11 +49,11 @@ jobs:
         run: python inspect_stack.py
       - name: Check missing propagation
         run: |
-          PROPAGATION_ENABLED=false docker compose up --detach --force-recreate gateway
+          PROPAGATION_ENABLED=false docker compose up --detach --force-recreate --wait --wait-timeout 120 gateway
           python inspect_stack.py --expect-unlinked
       - name: Check propagation recovery
         run: |
-          PROPAGATION_ENABLED=true docker compose up --detach --force-recreate gateway
+          PROPAGATION_ENABLED=true docker compose up --detach --force-recreate --wait --wait-timeout 120 gateway
           python inspect_stack.py
       - name: Show logs after failure
         if: failure()
