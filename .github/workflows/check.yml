@@ -44,7 +44,7 @@ jobs:
       - name: Validate and start the stack
         run: |
           docker compose config -q
-          docker compose up --detach --build
+          docker compose up --detach --build --wait --wait-timeout 120
       - name: Check Collector, Tempo and Grafana pipeline
         run: python inspect_stack.py
       - name: Check missing propagation
