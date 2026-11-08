@@ -1,0 +1,106 @@
+services:
+  gateway:
+    build:
+      context: .
+    command: ["python", "-B", "-m", "uvicorn", "tracing_demo.gateway:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      WORKER_URL: http://worker:8000
+      PROPAGATION_ENABLED: ${PROPAGATION_ENABLED:-true}
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://collector:4318/v1/traces
+      OTEL_BSP_SCHEDULE_DELAY: "200"
+      HEALTHCHECK_URL: http://127.0.0.1:8000/health
+    ports:
+      - "127.0.0.1:8000:8000"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python", "-B", "-m", "tracing_demo.healthcheck"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    depends_on:
+      worker:
+        condition: service_healthy
+      collector:
+        condition: service_started
+
+  worker:
+    build:
+      context: .
+    command: ["python", "-B", "-m", "uvicorn", "tracing_demo.worker:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://collector:4318/v1/traces
+      OTEL_BSP_SCHEDULE_DELAY: "200"
+      HEALTHCHECK_URL: http://127.0.0.1:8000/health
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python", "-B", "-m", "tracing_demo.healthcheck"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    depends_on:
+      collector:
+        condition: service_started
+
+  collector:
+    image: otel/opentelemetry-collector-contrib:0.138.0@sha256:4a951ff0a9772f4fa8e9c7a326434370301b98b2b813933468dcb54aa6a6b5e5
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./collector.yaml:/etc/otelcol/config.yaml:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      - tempo
+
+  tempo:
+    image: grafana/tempo:2.9.0@sha256:65a5789759435f1ef696f1953258b9bbdb18eb571d5ce711ff812d2e128288a4
+    command: ["-config.file=/etc/tempo.yaml"]
+    ports:
+      - "127.0.0.1:3200:3200"
+    volumes:
+      - ./tempo.yaml:/etc/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+
+  grafana:
+    image: grafana/grafana:12.3.0@sha256:70d9599b186ce287be0d2c5ba9a78acb2e86c1a68c9c41449454d0fc3eeb84e8
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_AUTH_DISABLE_LOGIN_FORM: "false"
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: grafana-demo
+      GF_USERS_DEFAULT_THEME: light
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      GF_PLUGINS_PREINSTALL_AUTO_UPDATE: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+    depends_on:
+      - tempo
+
+volumes:
+  grafana-data:
+  tempo-data:
